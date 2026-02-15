@@ -66,12 +66,7 @@ export default function JobDetailPage() {
   const handleUpdateStatus = useCallback(
     async (newStatus: string) => {
       if (!currentJob || !validId) return;
-      const result = await dispatch(
-        updateJob({ id: currentJob.id, input: { status: newStatus } })
-      );
-      if (updateJob.fulfilled.match(result)) {
-        // state is updated by reducer
-      }
+      await dispatch(updateJob({ id: currentJob.id, input: { status: newStatus } }));
     },
     [currentJob, dispatch, validId]
   );
@@ -223,12 +218,7 @@ export default function JobDetailPage() {
             <JobForm
               initialData={currentJob}
               onSubmit={async (data) => {
-                const result = await dispatch(
-                  updateJob({ id: currentJob.id, input: data })
-                );
-                if (updateJob.fulfilled.match(result)) {
-                  // updated
-                }
+                await dispatch(updateJob({ id: currentJob.id, input: data }));
               }}
               submitLabel="Update"
               isLoading={loading}

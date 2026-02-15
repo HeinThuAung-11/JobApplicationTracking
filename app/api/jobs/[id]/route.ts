@@ -5,6 +5,8 @@ import {
     successResponse,
 } from "@/lib/api-response";
 import { authOptions } from "@/lib/auth";
+import { parseJsonObject, serializeJob, serializeJobWithNotes } from "@/lib/api-utils";
+import { validateUpdateJobInput } from "@/lib/job-validation";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
@@ -39,16 +41,7 @@ export async function GET(
       return notFoundResponse("Job application not found");
     }
 
-    type NoteItem = (typeof job.notes)[number];
-    return successResponse({
-      ...job,
-      createdAt: job.createdAt.toISOString(),
-      applyDate: job.applyDate?.toISOString() ?? null,
-      notes: job.notes.map((n: NoteItem) => ({
-        ...n,
-        createdAt: n.createdAt.toISOString(),
-      })),
-    });
+    return successResponse(serializeJobWithNotes(job));
   } catch (err) {
     console.error("GET /api/jobs/[id]:", err);
     return serverErrorResponse();
@@ -71,75 +64,22 @@ export async function PATCH(
       return errorResponse("Invalid job ID", 400);
     }
 
-    const body = await request.json();
-    const { company, position, status, description, jobUrl, applyDate } = body;
-
-    const data: {
-      company?: string;
-      position?: string;
-      status?: string;
-      description?: string | null;
-      jobUrl?: string | null;
-      applyDate?: Date | null;
-    } = {};
-    if (company !== undefined) {
-      if (typeof company !== "string" || !company.trim()) {
-        return errorResponse("Company must be a non-empty string", 400);
-      }
-      data.company = company.trim();
+    const parsed = await parseJsonObject(request);
+    if (!parsed.ok) {
+      return parsed.response;
     }
-    if (position !== undefined) {
-      if (typeof position !== "string" || !position.trim()) {
-        return errorResponse("Position must be a non-empty string", 400);
-      }
-      data.position = position.trim();
+    const validated = validateUpdateJobInput(parsed.body);
+    if (!validated.ok) {
+      return validated.response;
     }
-    if (status !== undefined) {
-      if (typeof status !== "string" || !status.trim()) {
-        return errorResponse("Status must be a non-empty string", 400);
-      }
-      data.status = status.trim();
-    }
-    if (description !== undefined) {
-      if (description === null || description === "") {
-        data.description = null;
-      } else if (typeof description === "string") {
-        data.description = description.trim();
-      } else {
-        return errorResponse("Description must be a string", 400);
-      }
-    }
-    if (jobUrl !== undefined) {
-      if (jobUrl === null || jobUrl === "") {
-        data.jobUrl = null;
-      } else if (typeof jobUrl === "string") {
-        data.jobUrl = jobUrl.trim();
-      } else {
-        return errorResponse("Job URL must be a string", 400);
-      }
-    }
-    if (applyDate !== undefined) {
-      if (applyDate === null || applyDate === "") {
-        data.applyDate = null;
-      } else if (typeof applyDate === "string") {
-        const d = new Date(applyDate);
-        if (Number.isNaN(d.getTime())) return errorResponse("Invalid apply date", 400);
-        data.applyDate = d;
-      } else {
-        return errorResponse("Apply date must be a string", 400);
-      }
-    }
+    const data = validated.data;
 
     const job = await prisma.jobApplication.update({
       where: { id, userId: session.user.id },
       data,
     });
 
-    return successResponse({
-      ...job,
-      createdAt: job.createdAt.toISOString(),
-      applyDate: job.applyDate?.toISOString() ?? null,
-    });
+    return successResponse(serializeJob(job));
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2025") {
       return notFoundResponse("Job application not found");

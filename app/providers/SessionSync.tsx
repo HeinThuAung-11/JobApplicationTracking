@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
+import { useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useAppDispatch } from "@/store/hooks";
 import { setUser, logout } from "@/store/authSlice";
@@ -15,48 +16,76 @@ import {
 export function SessionSync() {
   const dispatch = useAppDispatch();
   const { data: session, status } = useSession();
+  const syncedUserIdRef = useRef<string | null>(null);
+
+  const handleSignedOut = useCallback(() => {
+    syncedUserIdRef.current = null;
+    dispatch(logout());
+    dispatch(setUseLocalStorage(true));
+    void Promise.all([dispatch(fetchJobs()), dispatch(fetchDashboard())]);
+  }, [dispatch]);
+
+  const handleSignedIn = useCallback(
+    async (user: {
+      id: string;
+      email: string;
+      name?: string | null;
+      image?: string | null;
+    }) => {
+      if (syncedUserIdRef.current === user.id) return;
+
+      syncedUserIdRef.current = user.id;
+      dispatch(setUser(user));
+
+      const localJobs = loadJobsFromLocalStorage();
+      dispatch(setUseLocalStorage(false));
+
+      let migrated = false;
+      if (localJobs.length > 0) {
+        const result = await dispatch(migrateLocalJobs({ jobs: localJobs }));
+        if (migrateLocalJobs.fulfilled.match(result)) {
+          migrated = true;
+        } else {
+          dispatch(setUseLocalStorage(true));
+          syncedUserIdRef.current = null;
+          return;
+        }
+      }
+
+      const [jobsResult, dashboardResult] = await Promise.all([
+        dispatch(fetchJobs()),
+        dispatch(fetchDashboard()),
+      ]);
+      if (fetchJobs.fulfilled.match(jobsResult) && fetchDashboard.fulfilled.match(dashboardResult)) {
+        if (migrated) {
+          clearLocalStorageData();
+        }
+        return;
+      }
+
+      dispatch(setUseLocalStorage(true));
+      syncedUserIdRef.current = null;
+    },
+    [dispatch]
+  );
 
   useEffect(() => {
     if (status === "loading") return;
 
-    if (session?.user?.id && session.user.email) {
-      const syncAfterLogin = async () => {
-        dispatch(
-          setUser({
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.name,
-            image: session.user.image,
-          })
-        );
-
-        const localJobs = loadJobsFromLocalStorage();
-        dispatch(setUseLocalStorage(false));
-
-        if (localJobs.length > 0) {
-          const result = await dispatch(migrateLocalJobs({ jobs: localJobs }));
-          if (migrateLocalJobs.fulfilled.match(result)) {
-            clearLocalStorageData();
-          } else {
-            // Fall back to guest mode if migration fails to avoid silent data loss.
-            dispatch(setUseLocalStorage(true));
-            return;
-          }
-        }
-
-        await dispatch(fetchJobs());
-        await dispatch(fetchDashboard());
-      };
-
-      void syncAfterLogin();
+    const userId = session?.user?.id;
+    const email = session?.user?.email;
+    if (userId && email) {
+      void handleSignedIn({
+        id: userId,
+        email,
+        name: session.user?.name ?? null,
+        image: session.user?.image ?? null,
+      });
       return;
     }
 
-    dispatch(logout());
-    dispatch(setUseLocalStorage(true));
-    void dispatch(fetchJobs());
-    void dispatch(fetchDashboard());
-  }, [dispatch, session, status]);
+    handleSignedOut();
+  }, [handleSignedIn, handleSignedOut, session, status]);
 
   return null;
 }

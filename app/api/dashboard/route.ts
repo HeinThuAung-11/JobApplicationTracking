@@ -1,5 +1,6 @@
 import { errorResponse, serverErrorResponse, successResponse } from "@/lib/api-response";
 import { authOptions } from "@/lib/auth";
+import { serializeJob } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 
@@ -19,27 +20,23 @@ export async function GET() {
         by: ["status"],
         _count: { status: true },
       }),
-      prisma.jobApplication.findMany({
-        where: { userId: session.user.id },
-        orderBy: { createdAt: "desc" },
-        take: RECENT_LIMIT,
-        include: { notes: { take: 1, orderBy: { createdAt: "desc" } } },
-      }),
-    ]);
+        prisma.jobApplication.findMany({
+          where: { userId: session.user.id },
+          orderBy: { createdAt: "desc" },
+          take: RECENT_LIMIT,
+          include: { _count: { select: { notes: true } } },
+        }),
+      ]);
 
     const byStatus: Record<string, number> = {};
     for (const row of byStatusRows) {
       byStatus[row.status] = row._count.status;
     }
 
-    const serializedRecent = recent.map((j) => ({
-      ...j,
-      createdAt: j.createdAt.toISOString(),
-      applyDate: j.applyDate?.toISOString() ?? null,
-      notes: j.notes.map((n) => ({
-        ...n,
-        createdAt: n.createdAt.toISOString(),
-      })),
+    const serializedRecent = recent.map((job) => ({
+      ...serializeJob(job),
+      notesCount: job._count.notes,
+      notes: undefined,
     }));
 
     return successResponse({

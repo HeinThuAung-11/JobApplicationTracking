@@ -12,12 +12,10 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
     }),
     GitHubProvider({
       clientId: process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
     }),
     CredentialsProvider({
       name: "credentials",
@@ -34,7 +32,6 @@ export const authOptions: NextAuthOptions = {
           where: { email: credentials.email },
         });
 
-        // If user doesn't exist, create one
         if (!user) {
           const hashedPassword = await bcrypt.hash(credentials.password, 10);
           const newUser = await prisma.user.create({
@@ -51,7 +48,6 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        // Check password
         if (!user.password) {
           throw new Error("Please sign in with OAuth provider");
         }
@@ -86,9 +82,8 @@ export const authOptions: NextAuthOptions = {
       }
       return true;
     },
-    async jwt({ token, user, account }) {
-      // On sign in, add user info to token
-      if (user) {
+      async jwt({ token, user, account }) {
+        if (user) {
         token.id = user.id;
         token.email = user.email;
         token.name = user.name;
@@ -96,9 +91,8 @@ export const authOptions: NextAuthOptions = {
       }
       return token;
     },
-    async session({ session, token }) {
-      // Add user info from token to session
-      if (session.user) {
+      async session({ session, token }) {
+        if (session.user) {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
         session.user.name = token.name as string;

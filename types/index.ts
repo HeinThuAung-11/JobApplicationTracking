@@ -9,6 +9,7 @@ export interface JobApplication {
   createdAt: string;
   userId?: string | null;
   notes?: Note[];
+  notesCount?: number;
 }
 
 export interface Note {
@@ -83,4 +84,3 @@ export interface LoginCredentials {
   email: string;
   password: string;
 }
-

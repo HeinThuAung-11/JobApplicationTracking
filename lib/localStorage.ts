@@ -1,7 +1,6 @@
-import type { DashboardStats, JobApplication, Note } from "@/types";
+import type { CreateJobInput, DashboardStats, JobApplication, Note } from "@/types";
 
 const JOBS_STORAGE_KEY = "job_tracker_jobs";
-const NOTES_STORAGE_KEY = "job_tracker_notes";
 
 // Check if we're in a browser environment
 const isBrowser = typeof window !== "undefined";
@@ -37,7 +36,7 @@ export function saveJobsToLocalStorage(jobs: JobApplication[]): void {
 /**
  * Add a job to localStorage
  */
-export function addJobToLocalStorage(job: Omit<JobApplication, "id">): JobApplication {
+export function addJobToLocalStorage(job: CreateJobInput): JobApplication {
   const jobs = loadJobsFromLocalStorage();
   const newId = jobs.length > 0 ? Math.max(...jobs.map(j => j.id)) + 1 : 1;
   const newJob: JobApplication = {
@@ -137,15 +136,4 @@ export function clearLocalStorageData(): void {
   if (!isBrowser) return;
   
   localStorage.removeItem(JOBS_STORAGE_KEY);
-  localStorage.removeItem(NOTES_STORAGE_KEY);
-}
-
-/**
- * Check if localStorage has any data
- */
-export function hasLocalStorageData(): boolean {
-  if (!isBrowser) return false;
-  
-  const jobs = loadJobsFromLocalStorage();
-  return jobs.length > 0;
 }

@@ -5,6 +5,7 @@ import {
     successResponse,
 } from "@/lib/api-response";
 import { authOptions } from "@/lib/auth";
+import { parseJsonObject, serializeNote } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
@@ -43,12 +44,7 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    return successResponse(
-      notes.map((n) => ({
-        ...n,
-        createdAt: n.createdAt.toISOString(),
-      }))
-    );
+    return successResponse(notes.map(serializeNote));
   } catch (err) {
     console.error("GET /api/jobs/[id]/notes:", err);
     return serverErrorResponse();
@@ -71,8 +67,11 @@ export async function POST(
       return errorResponse("Invalid job ID", 400);
     }
 
-    const body = await request.json();
-    const content = body?.content;
+    const parsed = await parseJsonObject(request);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const content = parsed.body.content;
 
     if (content === undefined || content === null) {
       return errorResponse("Content is required", 400);
@@ -96,13 +95,7 @@ export async function POST(
       },
     });
 
-    return successResponse(
-      {
-        ...note,
-        createdAt: note.createdAt.toISOString(),
-      },
-      201
-    );
+    return successResponse(serializeNote(note), 201);
   } catch (err) {
     console.error("POST /api/jobs/[id]/notes:", err);
     return serverErrorResponse();

@@ -2,20 +2,41 @@
 
 import { Button, Card, Input } from "@/components/ui";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+
+function getAuthErrorMessage(error: string | null): string {
+  if (!error) return "";
+
+  const errorMap: Record<string, string> = {
+    OAuthAccountNotLinked:
+      "This email is already registered with another sign-in method. Sign in with your original method first, then link this provider.",
+    AccessDenied: "Access was denied. Please try again or use another sign-in method.",
+    OAuthSignin: "Unable to start OAuth sign-in. Please try again.",
+    OAuthCallback: "OAuth callback failed. Please try again.",
+    OAuthCreateAccount: "Unable to create an account from OAuth provider data.",
+    Callback: "Authentication callback failed. Please try again.",
+    CredentialsSignin: "Invalid email or password.",
+    SessionRequired: "Please sign in to continue.",
+  };
+
+  return errorMap[error] ?? "Authentication failed. Please try again.";
+}
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const oauthError = getAuthErrorMessage(searchParams.get("error"));
+  const error = formError || oauthError;
 
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError("");
+    setFormError("");
 
     try {
       const result = await signIn("credentials", {
@@ -25,12 +46,12 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError(result.error);
+        setFormError(getAuthErrorMessage(result.error));
       } else {
         router.push("/");
       }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setFormError("An error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -38,12 +59,12 @@ export default function LoginPage() {
 
   const handleOAuthLogin = async (provider: "google" | "github") => {
     setIsLoading(true);
-    setError("");
+    setFormError("");
     
     try {
       await signIn(provider, { callbackUrl: "/" });
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setFormError("An error occurred. Please try again.");
       setIsLoading(false);
     }
   };
@@ -66,7 +87,6 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* OAuth Buttons */}
         <div className="space-y-3 mb-6">
           <Button
             onClick={() => handleOAuthLogin("google")}
@@ -117,7 +137,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Email/Password Form */}
         <form onSubmit={handleCredentialsLogin} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
@@ -158,9 +177,9 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-600">
-          Continue as guest to explore the demo
-        </p>
+          <p className="mt-6 text-center text-sm text-slate-600">
+            You can also continue in guest mode.
+          </p>
       </Card>
     </div>
   );

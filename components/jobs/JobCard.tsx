@@ -38,6 +38,8 @@ interface JobCardProps {
 }
 
 export const JobCard = memo(function JobCard({ job }: JobCardProps) {
+  const noteCount = job.notesCount ?? job.notes?.length ?? 0;
+
   return (
     <Link href={`/jobs/${job.id}`} className="block">
       <Card className="transition-shadow hover:shadow-md">
@@ -62,8 +64,8 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
                 Link
               </a>
             )}
-            {job.notes && job.notes.length > 0 && (
-              <span>{job.notes.length} note{job.notes.length !== 1 ? "s" : ""}</span>
+            {noteCount > 0 && (
+              <span>{noteCount} note{noteCount !== 1 ? "s" : ""}</span>
             )}
           </span>
         </div>

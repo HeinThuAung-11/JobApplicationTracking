@@ -27,6 +27,33 @@ function parseDateOrNull(value: unknown): Date | null {
   return d;
 }
 
+type NormalizedJob = {
+  company: string;
+  position: string;
+  status: string;
+  description: string | null;
+  jobUrl: string | null;
+  applyDate: Date | null;
+  createdAt: Date;
+  notes: { content: string; createdAt: Date }[];
+};
+
+const MAX_IMPORT_JOBS = 500;
+const MAX_NOTES_PER_JOB = 200;
+
+function jobSignature(job: NormalizedJob): string {
+  // Keep signature lightweight to avoid expensive note-level hashing at scale.
+  return JSON.stringify({
+    company: job.company,
+    position: job.position,
+    status: job.status,
+    description: job.description,
+    jobUrl: job.jobUrl,
+    applyDate: job.applyDate?.toISOString() ?? null,
+    createdAt: job.createdAt.toISOString(),
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -49,8 +76,11 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(jobsInput)) {
       return errorResponse("jobs must be an array", 400);
     }
+    if (jobsInput.length > MAX_IMPORT_JOBS) {
+      return errorResponse(`jobs exceeds maximum of ${MAX_IMPORT_JOBS} items`, 400);
+    }
 
-    const normalizedJobs = jobsInput
+    const normalizedJobs: NormalizedJob[] = jobsInput
       .filter((job): job is IncomingJob => job !== null && typeof job === "object")
       .map((job) => {
         const company = typeof job.company === "string" ? job.company.trim() : "";
@@ -70,7 +100,7 @@ export async function POST(request: NextRequest) {
         const applyDate = parseDateOrNull(job.applyDate);
         const createdAt = parseDateOrNull(job.createdAt) ?? new Date();
 
-        const notesRaw = Array.isArray(job.notes) ? (job.notes as IncomingNote[]) : [];
+        const notesRaw = Array.isArray(job.notes) ? (job.notes as IncomingNote[]).slice(0, MAX_NOTES_PER_JOB) : [];
         const notes = notesRaw
           .filter((note) => note && typeof note === "object")
           .map((note) => {
@@ -93,30 +123,51 @@ export async function POST(request: NextRequest) {
           notes,
         };
       })
-      .filter(
-        (
-          job
-        ): job is {
-          company: string;
-          position: string;
-          status: string;
-          description: string | null;
-          jobUrl: string | null;
-          applyDate: Date | null;
-          createdAt: Date;
-          notes: { content: string; createdAt: Date }[];
-        } => !!job
-      );
+      .filter((job): job is NormalizedJob => !!job);
 
     if (normalizedJobs.length === 0) {
-      return successResponse({ importedJobs: 0, importedNotes: 0 });
+      return successResponse({ importedJobs: 0, skippedJobs: 0, importedNotes: 0 });
     }
 
     const result = await prisma.$transaction(async (tx) => {
       let importedJobs = 0;
+      let skippedJobs = 0;
       let importedNotes = 0;
 
+        const existingJobs = await tx.jobApplication.findMany({
+          where: { userId: session.user.id },
+          select: {
+            company: true,
+            position: true,
+            status: true,
+            description: true,
+            jobUrl: true,
+            applyDate: true,
+            createdAt: true,
+          },
+        });
+        const existingSignatures = new Set(
+          existingJobs.map((job) =>
+          jobSignature({
+            company: job.company,
+            position: job.position,
+            status: job.status,
+              description: job.description,
+              jobUrl: job.jobUrl,
+              applyDate: job.applyDate,
+              createdAt: job.createdAt,
+              notes: [],
+            })
+          )
+        );
+
       for (const job of normalizedJobs) {
+        const signature = jobSignature(job);
+        if (existingSignatures.has(signature)) {
+          skippedJobs += 1;
+          continue;
+        }
+
         const createdJob = await tx.jobApplication.create({
           data: {
             company: job.company,
@@ -142,9 +193,11 @@ export async function POST(request: NextRequest) {
           });
           importedNotes += job.notes.length;
         }
+
+        existingSignatures.add(signature);
       }
 
-      return { importedJobs, importedNotes };
+      return { importedJobs, skippedJobs, importedNotes };
     });
 
     return successResponse(result, 201);
