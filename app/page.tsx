@@ -64,7 +64,7 @@ export default function DashboardPage() {
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-amber-900">Guest Mode - Data Stored Locally</h3>
               <p className="mt-1 text-sm text-amber-800">
-                You're currently using the app as a guest. Your data is stored in your browser's localStorage and will
+                You&apos;re currently using the app as a guest. Your data is stored in your browser&apos;s localStorage and will
                 be lost if you clear your browser data.{" "}
                 <Link href="/login" className="font-medium underline hover:text-amber-900">
                   Login to save your data to the cloud

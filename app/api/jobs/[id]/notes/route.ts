@@ -10,6 +10,8 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
 
+const MAX_NOTE_LENGTH = 2000;
+
 async function getJobId(idParam: string): Promise<number | null> {
   const id = parseInt(idParam, 10);
   return Number.isNaN(id) ? null : id;
@@ -78,6 +80,9 @@ export async function POST(
     }
     if (typeof content !== "string" || !content.trim()) {
       return errorResponse("Content must be a non-empty string", 400);
+    }
+    if (content.trim().length > MAX_NOTE_LENGTH) {
+      return errorResponse(`Content must be ${MAX_NOTE_LENGTH} characters or fewer`, 400);
     }
 
     const job = await prisma.jobApplication.findUnique({

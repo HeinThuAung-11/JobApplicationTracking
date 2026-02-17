@@ -1,6 +1,7 @@
 import { errorResponse, serverErrorResponse, successResponse } from "@/lib/api-response";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { JOB_STATUSES } from "@/types";
 import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
 
@@ -40,6 +41,17 @@ type NormalizedJob = {
 
 const MAX_IMPORT_JOBS = 500;
 const MAX_NOTES_PER_JOB = 200;
+const MAX_COMPANY_LENGTH = 120;
+const MAX_POSITION_LENGTH = 160;
+const MAX_STATUS_LENGTH = 32;
+const MAX_DESCRIPTION_LENGTH = 5000;
+const MAX_JOB_URL_LENGTH = 2048;
+const MAX_NOTE_LENGTH = 2000;
+const STATUS_SET = new Set(JOB_STATUSES);
+
+function isValidStatus(value: string) {
+  return STATUS_SET.has(value as (typeof JOB_STATUSES)[number]);
+}
 
 function jobSignature(job: NormalizedJob): string {
   // Keep signature lightweight to avoid expensive note-level hashing at scale.
@@ -88,6 +100,10 @@ export async function POST(request: NextRequest) {
         const status = typeof job.status === "string" ? job.status.trim() : "";
 
         if (!company || !position || !status) return null;
+        if (!isValidStatus(status)) return null;
+        if (company.length > MAX_COMPANY_LENGTH) return null;
+        if (position.length > MAX_POSITION_LENGTH) return null;
+        if (status.length > MAX_STATUS_LENGTH) return null;
 
         const description =
           typeof job.description === "string" && job.description.trim()
@@ -97,6 +113,8 @@ export async function POST(request: NextRequest) {
           typeof job.jobUrl === "string" && job.jobUrl.trim()
             ? job.jobUrl.trim()
             : null;
+        if (description && description.length > MAX_DESCRIPTION_LENGTH) return null;
+        if (jobUrl && jobUrl.length > MAX_JOB_URL_LENGTH) return null;
         const applyDate = parseDateOrNull(job.applyDate);
         const createdAt = parseDateOrNull(job.createdAt) ?? new Date();
 
@@ -107,6 +125,7 @@ export async function POST(request: NextRequest) {
             const content =
               typeof note.content === "string" ? note.content.trim() : "";
             if (!content) return null;
+            if (content.length > MAX_NOTE_LENGTH) return null;
             const noteCreatedAt = parseDateOrNull(note.createdAt) ?? createdAt;
             return { content, createdAt: noteCreatedAt };
           })
@@ -168,7 +187,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const createdJob = await tx.jobApplication.create({
+        await tx.jobApplication.create({
           data: {
             company: job.company,
             position: job.position,
@@ -178,21 +197,20 @@ export async function POST(request: NextRequest) {
             applyDate: job.applyDate,
             createdAt: job.createdAt,
             userId: session.user.id,
+            notes: job.notes.length
+              ? {
+                  createMany: {
+                    data: job.notes.map((note) => ({
+                      content: note.content,
+                      createdAt: note.createdAt,
+                    })),
+                  },
+                }
+              : undefined,
           },
-          select: { id: true },
         });
         importedJobs += 1;
-
-        if (job.notes.length > 0) {
-          await tx.note.createMany({
-            data: job.notes.map((note) => ({
-              jobApplicationId: createdJob.id,
-              content: note.content,
-              createdAt: note.createdAt,
-            })),
-          });
-          importedNotes += job.notes.length;
-        }
+        importedNotes += job.notes.length;
 
         existingSignatures.add(signature);
       }

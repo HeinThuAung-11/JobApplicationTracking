@@ -2,20 +2,34 @@
 
 import { JobCard } from "@/components/jobs/JobCard";
 import { Alert, Button, Input, Select, Spinner } from "@/components/ui";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { clearError, fetchJobs } from "@/store/jobsSlice";
 import { JOB_STATUSES } from "@/types";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  clearError,
+  fetchJobs,
+  JobsSortBy,
+  selectJobsListMeta,
+} from "@/store/jobsSlice";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+const PAGE_SIZE = 12;
 
 export default function JobsListPage() {
   const dispatch = useAppDispatch();
   const { items, loading, error } = useAppSelector((state) => state.jobs);
+  const listMeta = useAppSelector(selectJobsListMeta);
+
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [sortBy, setSortBy] = useState("date_desc");
+  const [sortBy, setSortBy] = useState<JobsSortBy>("date_desc");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const offset = (currentPage - 1) * PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(listMeta.total / PAGE_SIZE));
 
   const statusOptions = useMemo(
     () => [
@@ -40,68 +54,43 @@ export default function JobsListPage() {
     []
   );
 
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const fromMs = fromDate ? new Date(fromDate).getTime() : null;
-    const toMs = toDate ? new Date(toDate).getTime() : null;
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 250);
 
-    const filtered = items.filter((job) => {
-      const statusMatch = statusFilter === "all" || job.status === statusFilter;
-      if (!statusMatch) return false;
-
-      const effectiveDate = new Date(job.applyDate ?? job.createdAt).getTime();
-      if (fromMs !== null && Number.isFinite(fromMs) && effectiveDate < fromMs) {
-        return false;
-      }
-      if (toMs !== null && Number.isFinite(toMs)) {
-        const endOfDay = toMs + 24 * 60 * 60 * 1000 - 1;
-        if (effectiveDate > endOfDay) return false;
-      }
-
-      if (!q) return true;
-      const companyMatch = job.company.toLowerCase().includes(q);
-      const positionMatch = job.position.toLowerCase().includes(q);
-      return companyMatch || positionMatch;
-    });
-
-    const sorted = [...filtered].sort((a, b) => {
-      const aDate = new Date(a.applyDate ?? a.createdAt).getTime();
-      const bDate = new Date(b.applyDate ?? b.createdAt).getTime();
-
-      switch (sortBy) {
-        case "date_asc":
-          return aDate - bDate;
-        case "date_desc":
-          return bDate - aDate;
-        case "company_asc":
-          return a.company.localeCompare(b.company);
-        case "company_desc":
-          return b.company.localeCompare(a.company);
-        case "status_asc":
-          return a.status.localeCompare(b.status);
-        case "status_desc":
-          return b.status.localeCompare(a.status);
-        default:
-          return bDate - aDate;
-      }
-    });
-
-    return sorted;
-  }, [items, query, statusFilter, fromDate, toDate, sortBy]);
+    return () => window.clearTimeout(id);
+  }, [query]);
 
   useEffect(() => {
-    void dispatch(fetchJobs());
-  }, [dispatch]);
+    setCurrentPage(1);
+  }, [debouncedQuery, statusFilter, fromDate, toDate, sortBy]);
 
-  if (loading && items.length === 0) {
-    return (
-      <div className="mx-auto max-w-6xl">
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      </div>
+  useEffect(() => {
+    void dispatch(
+      fetchJobs({
+        query: debouncedQuery || undefined,
+        status: statusFilter,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        sortBy,
+        limit: PAGE_SIZE,
+        offset,
+      })
     );
-  }
+  }, [
+    debouncedQuery,
+    dispatch,
+    fromDate,
+    offset,
+    sortBy,
+    statusFilter,
+    toDate,
+  ]);
+
+  const hasItems = items.length > 0;
+  const showingStart = listMeta.total === 0 ? 0 : listMeta.offset + 1;
+  const showingEnd = listMeta.offset + items.length;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -144,7 +133,7 @@ export default function JobsListPage() {
               label="Sort"
               options={sortOptions}
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={(e) => setSortBy(e.target.value as JobsSortBy)}
               aria-label="Sort jobs"
             />
           </div>
@@ -155,10 +144,12 @@ export default function JobsListPage() {
               className="w-full"
               onClick={() => {
                 setQuery("");
+                setDebouncedQuery("");
                 setStatusFilter("all");
                 setFromDate("");
                 setToDate("");
                 setSortBy("date_desc");
+                setCurrentPage(1);
               }}
             >
               Clear
@@ -189,18 +180,26 @@ export default function JobsListPage() {
         </div>
       </div>
 
-      <p className="text-sm text-slate-500">
-        Showing {filteredItems.length} of {items.length} applications
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-500">
+          Showing {showingStart}-{showingEnd} of {listMeta.total} applications
+        </p>
+        {loading && hasItems && (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Spinner size="sm" />
+            Updating results...
+          </div>
+        )}
+      </div>
 
-      {items.length === 0 && !loading ? (
+      {!loading && listMeta.total === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-16 text-center">
           <p className="text-slate-600">No applications yet.</p>
           <Link href="/jobs/new" className="mt-4 inline-block">
             <Button>Add your first job</Button>
           </Link>
         </div>
-      ) : filteredItems.length === 0 ? (
+      ) : !loading && !hasItems ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-12 text-center">
           <p className="text-slate-600">No jobs match your filters.</p>
           <Button
@@ -208,21 +207,57 @@ export default function JobsListPage() {
             className="mt-4"
             onClick={() => {
               setQuery("");
+              setDebouncedQuery("");
               setStatusFilter("all");
               setFromDate("");
               setToDate("");
               setSortBy("date_desc");
+              setCurrentPage(1);
             }}
           >
             Reset filters
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredItems.map((job) => (
-            <JobCard key={job.id} job={job} />
-          ))}
-        </div>
+        <>
+          {loading && !hasItems ? (
+            <div className="mx-auto max-w-6xl">
+              <div className="flex justify-center py-16">
+                <Spinner size="lg" />
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {items.map((job) => (
+                <JobCard key={job.id} job={job} />
+              ))}
+            </div>
+          )}
+
+          {listMeta.total > PAGE_SIZE && (
+            <div className="flex flex-col items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row">
+              <p className="text-sm text-slate-600">
+                Page {currentPage} of {totalPages}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  disabled={currentPage <= 1 || loading}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={currentPage >= totalPages || loading}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -67,10 +67,18 @@ cp .env.example .env
 Edit `.env` and set:
 
 ```env
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public"
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1"
+DIRECT_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="replace-with-a-long-random-secret"
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+GITHUB_CLIENT_ID="your-github-client-id"
+GITHUB_CLIENT_SECRET="your-github-client-secret"
 ```
 
-Replace `USER`, `PASSWORD`, `HOST`, and `DATABASE` with your PostgreSQL credentials.
+`DATABASE_URL` should use the Supabase pooler host (`:6543`) for app traffic.
+`DIRECT_URL` should use the direct host (`db.<project-ref>.supabase.co:5432`) for Prisma migrations.
 
 ### 3. Database migration
 
@@ -126,6 +134,7 @@ All routes are under `/api`. JSON request/response.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| POST | `/api/auth/register` | Create email/password account |
 | GET | `/api/jobs` | List all job applications |
 | POST | `/api/jobs` | Create job (body: `company`, `position`, `status`) |
 | GET | `/api/jobs/:id` | Get one job with notes |
@@ -145,7 +154,13 @@ Create a PostgreSQL database (e.g. Neon, Supabase, or Railway) and copy the conn
 
 1. Push the repo to GitHub (or connect another Git provider).
 2. Go to [vercel.com](https://vercel.com) → New Project → Import this repo.
-3. **Environment variables:** Add `DATABASE_URL` with your PostgreSQL connection string.
+3. **Environment variables:** Add all required variables:
+   - `DATABASE_URL`
+   - `DIRECT_URL`
+   - `NEXTAUTH_URL` (your deployed URL, e.g. `https://your-app.vercel.app`)
+   - `NEXTAUTH_SECRET`
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+   - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
 4. **Build command:** `npm run build` (or leave default; the project uses `prisma generate` in `build`).
 5. Deploy. Vercel will run `npm run build` and then serve the app.
 
@@ -156,12 +171,12 @@ After the first deploy, run migrations against the production DB. Options:
 **Option A – Local with prod URL**
 
 ```bash
-DATABASE_URL="your-production-database-url" npx prisma migrate deploy
+DATABASE_URL="your-production-pooler-url" DIRECT_URL="your-production-direct-url" npx prisma migrate deploy
 ```
 
 **Option B – CI or one-off script**
 
-In your CI or a one-off job, set `DATABASE_URL` to the production URL and run:
+In your CI or a one-off job, set both `DATABASE_URL` and `DIRECT_URL` and run:
 
 ```bash
 npx prisma migrate deploy
@@ -171,7 +186,7 @@ Do **not** run `prisma migrate dev` against production; use `migrate deploy` for
 
 ### 4. Post-deploy
 
-- Ensure the deployed app’s env has `DATABASE_URL` (and optionally `NEXT_PUBLIC_API_BASE_URL` if the app is not same-origin).
+- Ensure the deployed app’s env has `DATABASE_URL`, `DIRECT_URL`, and NextAuth/OAuth variables.
 - Open your Vercel URL and confirm the dashboard and CRUD flows work.
 
 ## Features

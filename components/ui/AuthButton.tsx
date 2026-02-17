@@ -2,6 +2,7 @@
 
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Button } from "./Button";
 
 export function AuthButton() {
@@ -38,7 +39,13 @@ export function AuthButton() {
         onClick={() => setShowMenu(!showMenu)}
         className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
         {session.user?.image ? (
-          <img src={session.user.image} alt={session.user.name || "User"} className="w-8 h-8 rounded-full" />
+          <Image
+            src={session.user.image}
+            alt={session.user.name || "User"}
+            width={32}
+            height={32}
+            className="w-8 h-8 rounded-full"
+          />
         ) : (
           <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white font-medium">
             {session.user?.email?.[0].toUpperCase() || "U"}

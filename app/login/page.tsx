@@ -3,7 +3,7 @@
 import { Button, Card, Input } from "@/components/ui";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 function getAuthErrorMessage(error: string | null): string {
   if (!error) return "";
@@ -23,22 +23,59 @@ function getAuthErrorMessage(error: string | null): string {
   return errorMap[error] ?? "Authentication failed. Please try again.";
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState("");
-  const oauthError = getAuthErrorMessage(searchParams.get("error"));
+  const [formSuccess, setFormSuccess] = useState("");
+  const oauthError = mode === "signin" ? getAuthErrorMessage(searchParams.get("error")) : "";
   const error = formError || oauthError;
 
-  const handleCredentialsLogin = async (e: React.FormEvent) => {
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setFormError("");
+    setFormSuccess("");
 
     try {
+      if (mode === "signup") {
+        const registerResponse = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim() || undefined,
+            email,
+            password,
+          }),
+        });
+
+        if (!registerResponse.ok) {
+          const payload = (await registerResponse.json().catch(() => null)) as { message?: string } | null;
+          setFormError(payload?.message || "Unable to create account.");
+          return;
+        }
+
+        const autoLogin = await signIn("credentials", {
+          email,
+          password,
+          redirect: false,
+        });
+
+        if (autoLogin?.error) {
+          setFormSuccess("Account created. Please sign in.");
+          setMode("signin");
+          return;
+        }
+
+        router.push("/");
+        return;
+      }
+
       const result = await signIn("credentials", {
         email,
         password,
@@ -50,7 +87,7 @@ export default function LoginPage() {
       } else {
         router.push("/");
       }
-    } catch (err) {
+    } catch {
       setFormError("An error occurred. Please try again.");
     } finally {
       setIsLoading(false);
@@ -60,10 +97,11 @@ export default function LoginPage() {
   const handleOAuthLogin = async (provider: "google" | "github") => {
     setIsLoading(true);
     setFormError("");
+    setFormSuccess("");
     
     try {
       await signIn(provider, { callbackUrl: "/" });
-    } catch (err) {
+    } catch {
       setFormError("An error occurred. Please try again.");
       setIsLoading(false);
     }
@@ -74,16 +112,52 @@ export default function LoginPage() {
       <Card className="w-full max-w-md p-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">
-            Welcome Back
+            {mode === "signin" ? "Welcome Back" : "Create Account"}
           </h1>
           <p className="text-slate-600">
-            Sign in to access your job applications
+            {mode === "signin"
+              ? "Sign in to access your job applications"
+              : "Create your account to save applications in the cloud"}
           </p>
+        </div>
+
+        <div className="mb-6 grid grid-cols-2 rounded-lg border border-slate-200 p-1">
+          <button
+            type="button"
+            className={`rounded-md px-3 py-2 text-sm font-medium transition ${
+              mode === "signin" ? "bg-primary-600 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+            onClick={() => {
+              setMode("signin");
+              setFormError("");
+              setFormSuccess("");
+            }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className={`rounded-md px-3 py-2 text-sm font-medium transition ${
+              mode === "signup" ? "bg-primary-600 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+            onClick={() => {
+              setMode("signup");
+              setFormError("");
+              setFormSuccess("");
+            }}
+          >
+            Sign up
+          </button>
         </div>
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
+          </div>
+        )}
+        {formSuccess && (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm">
+            {formSuccess}
           </div>
         )}
 
@@ -133,11 +207,28 @@ export default function LoginPage() {
             <div className="w-full border-t border-slate-300"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-4 bg-white text-slate-500">Or continue with email</span>
+            <span className="px-4 bg-white text-slate-500">
+              {mode === "signin" ? "Or continue with email" : "Or create account with email"}
+            </span>
           </div>
         </div>
 
-        <form onSubmit={handleCredentialsLogin} className="space-y-4">
+        <form onSubmit={handleCredentialsSubmit} className="space-y-4">
+          {mode === "signup" && (
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-2">
+                Name (optional)
+              </label>
+              <Input
+                id="name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+                disabled={isLoading}
+              />
+            </div>
+          )}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
               Email
@@ -162,7 +253,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder={mode === "signup" ? "At least 8 characters" : "••••••••"}
               required
               disabled={isLoading}
             />
@@ -173,7 +264,13 @@ export default function LoginPage() {
             disabled={isLoading}
             className="w-full"
           >
-            {isLoading ? "Signing in..." : "Sign in"}
+            {isLoading
+              ? mode === "signin"
+                ? "Signing in..."
+                : "Creating account..."
+              : mode === "signin"
+                ? "Sign in"
+                : "Create account"}
           </Button>
         </form>
 
@@ -182,5 +279,13 @@ export default function LoginPage() {
           </p>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

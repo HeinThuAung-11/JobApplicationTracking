@@ -1,4 +1,5 @@
 import { errorResponse } from "./api-response";
+import { JOB_STATUSES } from "@/types";
 
 type JobCreateData = {
   company: string;
@@ -18,10 +19,46 @@ type JobUpdateData = {
   applyDate?: Date | null;
 };
 
+const STATUS_SET = new Set(JOB_STATUSES);
+const MAX_COMPANY_LENGTH = 120;
+const MAX_POSITION_LENGTH = 160;
+const MAX_STATUS_LENGTH = 32;
+const MAX_DESCRIPTION_LENGTH = 5000;
+const MAX_URL_LENGTH = 2048;
+
 function asTrimmedString(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function ensureMaxLength(value: string, max: number, field: string) {
+  if (value.length > max) {
+    return { ok: false as const, response: errorResponse(`${field} must be ${max} characters or fewer`, 400) };
+  }
+  return { ok: true as const };
+}
+
+function validateStatus(status: string) {
+  if (!STATUS_SET.has(status as (typeof JOB_STATUSES)[number])) {
+    return { ok: false as const, response: errorResponse("Invalid status value", 400) };
+  }
+  return { ok: true as const };
+}
+
+function validateOptionalUrl(urlValue: string) {
+  if (urlValue.length > MAX_URL_LENGTH) {
+    return { ok: false as const, response: errorResponse(`Job URL must be ${MAX_URL_LENGTH} characters or fewer`, 400) };
+  }
+  try {
+    const parsed = new URL(urlValue);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false as const, response: errorResponse("Job URL must start with http:// or https://", 400) };
+    }
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, response: errorResponse("Job URL must be a valid URL", 400) };
+  }
 }
 
 export function validateCreateJobInput(body: Record<string, unknown>) {
@@ -33,6 +70,15 @@ export function validateCreateJobInput(body: Record<string, unknown>) {
   if (!position) return { ok: false as const, response: errorResponse("Position is required", 400) };
   if (!status) return { ok: false as const, response: errorResponse("Status is required", 400) };
 
+  const companyLengthCheck = ensureMaxLength(company, MAX_COMPANY_LENGTH, "Company");
+  if (!companyLengthCheck.ok) return companyLengthCheck;
+  const positionLengthCheck = ensureMaxLength(position, MAX_POSITION_LENGTH, "Position");
+  if (!positionLengthCheck.ok) return positionLengthCheck;
+  const statusLengthCheck = ensureMaxLength(status, MAX_STATUS_LENGTH, "Status");
+  if (!statusLengthCheck.ok) return statusLengthCheck;
+  const statusCheck = validateStatus(status);
+  if (!statusCheck.ok) return statusCheck;
+
   const data: JobCreateData = {
     company,
     position,
@@ -42,12 +88,16 @@ export function validateCreateJobInput(body: Record<string, unknown>) {
   if (body.description !== undefined && body.description !== null && body.description !== "") {
     const description = asTrimmedString(body.description);
     if (!description) return { ok: false as const, response: errorResponse("Description must be a string", 400) };
+    const descriptionLengthCheck = ensureMaxLength(description, MAX_DESCRIPTION_LENGTH, "Description");
+    if (!descriptionLengthCheck.ok) return descriptionLengthCheck;
     data.description = description;
   }
 
   if (body.jobUrl !== undefined && body.jobUrl !== null && body.jobUrl !== "") {
     const jobUrl = asTrimmedString(body.jobUrl);
     if (!jobUrl) return { ok: false as const, response: errorResponse("Job URL must be a string", 400) };
+    const urlCheck = validateOptionalUrl(jobUrl);
+    if (!urlCheck.ok) return urlCheck;
     data.jobUrl = jobUrl;
   }
 
@@ -73,6 +123,8 @@ export function validateUpdateJobInput(body: Record<string, unknown>) {
     if (!company) {
       return { ok: false as const, response: errorResponse("Company must be a non-empty string", 400) };
     }
+    const companyLengthCheck = ensureMaxLength(company, MAX_COMPANY_LENGTH, "Company");
+    if (!companyLengthCheck.ok) return companyLengthCheck;
     data.company = company;
   }
 
@@ -81,6 +133,8 @@ export function validateUpdateJobInput(body: Record<string, unknown>) {
     if (!position) {
       return { ok: false as const, response: errorResponse("Position must be a non-empty string", 400) };
     }
+    const positionLengthCheck = ensureMaxLength(position, MAX_POSITION_LENGTH, "Position");
+    if (!positionLengthCheck.ok) return positionLengthCheck;
     data.position = position;
   }
 
@@ -89,6 +143,10 @@ export function validateUpdateJobInput(body: Record<string, unknown>) {
     if (!status) {
       return { ok: false as const, response: errorResponse("Status must be a non-empty string", 400) };
     }
+    const statusLengthCheck = ensureMaxLength(status, MAX_STATUS_LENGTH, "Status");
+    if (!statusLengthCheck.ok) return statusLengthCheck;
+    const statusCheck = validateStatus(status);
+    if (!statusCheck.ok) return statusCheck;
     data.status = status;
   }
 
@@ -100,6 +158,8 @@ export function validateUpdateJobInput(body: Record<string, unknown>) {
       if (!description) {
         return { ok: false as const, response: errorResponse("Description must be a string", 400) };
       }
+      const descriptionLengthCheck = ensureMaxLength(description, MAX_DESCRIPTION_LENGTH, "Description");
+      if (!descriptionLengthCheck.ok) return descriptionLengthCheck;
       data.description = description;
     }
   }
@@ -112,6 +172,8 @@ export function validateUpdateJobInput(body: Record<string, unknown>) {
       if (!jobUrl) {
         return { ok: false as const, response: errorResponse("Job URL must be a string", 400) };
       }
+      const urlCheck = validateOptionalUrl(jobUrl);
+      if (!urlCheck.ok) return urlCheck;
       data.jobUrl = jobUrl;
     }
   }
